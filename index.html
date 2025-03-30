@@ -363,6 +363,9 @@
         let baseHeight = 1000;
         let scaleRatio = 1;
         
+        // Fator de aumento de tamanho (40% maior que o original)
+        const sizeMultiplier = 1.4;
+        
         // Ajuste inicial do canvas
         function resizeCanvas() {
             const windowWidth = window.innerWidth;
@@ -473,11 +476,11 @@
             }
         }
         
-        // Nave do jogador
+        // Nave do jogador (40% maior)
         const player = {
-            width: 60 * scaleRatio,
-            height: 48 * scaleRatio,
-            x: canvas.width / 2 - (60 * scaleRatio) / 2,
+            width: 60 * scaleRatio * sizeMultiplier,
+            height: 48 * scaleRatio * sizeMultiplier,
+            x: canvas.width / 2 - (60 * scaleRatio * sizeMultiplier) / 2,
             y: canvas.height - (80 * scaleRatio),
             speed: 300 * scaleRatio,
             movingLeft: false,
@@ -626,7 +629,7 @@
             }
         };
         
-        // Inimigos (com mais variedade)
+        // Inimigos (com mais variedade e 40% maiores)
         let enemies = [];
         
         function spawnEnemy() {
@@ -635,9 +638,8 @@
                 difficultySettings.maxEnemySpeed
             ) * scaleRatio;
             
-            const size = 48 * scaleRatio;
+            const size = 48 * scaleRatio * sizeMultiplier;
             const isShooter = Math.random() < difficultySettings.shooterSpawnChance;
-            // Agora temos 7 tipos de naves inimigas (2 novas similares ao jogador)
             const variation = Math.floor(Math.random() * 7);
             
             const enemy = {
@@ -684,10 +686,10 @@
                 
                 shoot: function() {
                     enemyProjectiles.push({
-                        x: this.x + this.width / 2 - (6 * scaleRatio) / 2,
+                        x: this.x + this.width / 2 - (6 * scaleRatio * sizeMultiplier) / 2,
                         y: this.y + this.height,
-                        width: 10 * scaleRatio,
-                        height: 18 * scaleRatio,
+                        width: 10 * scaleRatio * sizeMultiplier,
+                        height: 18 * scaleRatio * sizeMultiplier,
                         speed: 300 * scaleRatio,
                         color: this.color,
                         draw() {
@@ -904,9 +906,9 @@
             }
         }
         
-        // Power-ups
+        // Power-ups (40% maiores)
         function spawnPowerUp(x, y, type) {
-            const size = 24 * scaleRatio;
+            const size = 24 * scaleRatio * sizeMultiplier;
             const colors = {
                 shield: '#0af',
                 firepower: '#f80'
@@ -1080,15 +1082,15 @@
             explosions.push(explosion);
         }
         
-        // Sistema de tiros do jogador
+        // Sistema de tiros do jogador (40% maiores)
         function shoot() {
-            const baseWidth = 7 + Math.floor(difficultyLevel / 10);
-            const baseHeight = 24 + Math.floor(difficultyLevel / 5);
+            const baseWidth = (7 + Math.floor(difficultyLevel / 10)) * sizeMultiplier;
+            const baseHeight = (24 + Math.floor(difficultyLevel / 5)) * sizeMultiplier;
             
             // Aumenta o poder de fogo se o boost estiver ativo
             const powerMultiplier = player.firepowerLevel;
-            const projectileWidth = baseWidth * scaleRatio * powerMultiplier;
-            const projectileHeight = baseHeight * scaleRatio * powerMultiplier;
+            const projectileWidth = baseWidth * scaleRatio;
+            const projectileHeight = baseHeight * scaleRatio;
             const damageMultiplier = (1 + Math.floor(difficultyLevel / 10) * 0.5) * powerMultiplier;
             
             // Se o poder de fogo estiver ativado, cria dois projéteis adicionais com pequeno ângulo
