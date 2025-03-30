@@ -328,7 +328,7 @@
             </div>
             <div id="touch-indicator" class="touch-indicator"></div>
             <div id="controls-info">
-                Toque nas áreas laterais para mover | Toque no centro para atirar
+                Toque nas áreas laterais para mover e atirar automaticamente
             </div>
         </div>
     </div>
@@ -1197,11 +1197,35 @@
             const leftArea = touchControls.children[0];
             const rightArea = touchControls.children[1];
             
+            // Função para disparar tiros automaticamente quando movendo
+            function autoShootWhileMoving() {
+                if (!gameActive || gamePaused) return;
+                
+                // Cria um intervalo de disparo automático
+                const shootInterval = setInterval(() => {
+                    if (canShoot && (player.movingLeft || player.movingRight)) {
+                        shoot();
+                    }
+                }, shootDelay);
+                
+                // Retorna a função para limpar o intervalo
+                return () => clearInterval(shootInterval);
+            }
+            
+            let clearShootInterval = () => {};
+            
             leftArea.addEventListener('touchstart', (e) => {
                 if (!gameActive || gamePaused) return;
                 player.movingLeft = true;
                 player.movingRight = false;
                 showTouchFeedback(e.touches[0].clientX, e.touches[0].clientY, 'left');
+                
+                // Dispara imediatamente ao tocar
+                if (canShoot) shoot();
+                
+                // Inicia o disparo automático
+                clearShootInterval = autoShootWhileMoving();
+                
                 e.preventDefault();
             });
             
@@ -1210,6 +1234,13 @@
                 player.movingRight = true;
                 player.movingLeft = false;
                 showTouchFeedback(e.touches[0].clientX, e.touches[0].clientY, 'right');
+                
+                // Dispara imediatamente ao tocar
+                if (canShoot) shoot();
+                
+                // Inicia o disparo automático
+                clearShootInterval = autoShootWhileMoving();
+                
                 e.preventDefault();
             });
             
@@ -1217,6 +1248,9 @@
                 player.movingLeft = false;
                 player.movingRight = false;
                 touchIndicator.style.display = 'none';
+                
+                // Para o disparo automático quando solta o toque
+                clearShootInterval();
             });
             
             canvas.addEventListener('touchstart', (e) => {
@@ -1225,6 +1259,7 @@
                 const canvasRect = canvas.getBoundingClientRect();
                 const canvasX = touchX - canvasRect.left;
                 
+                // Dispara ao tocar no centro da tela
                 if (canShoot && 
                     canvasX > canvasRect.width * 0.3 && 
                     canvasX < canvasRect.width * 0.7) {
