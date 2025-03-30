@@ -39,6 +39,14 @@
             font-size: 20px;
         }
         
+        #difficulty {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #ff0;
+            font-size: 20px;
+        }
+        
         #game-over {
             position: absolute;
             top: 50%;
@@ -75,6 +83,7 @@
     <canvas id="game-canvas"></canvas>
     <div id="game-ui">
         <div id="score">Score: 0</div>
+        <div id="difficulty">Dificuldade: 1</div>
         <div id="game-over">
             GAME OVER<br>
             <button id="restart-btn">Play Again</button>
@@ -89,6 +98,7 @@
         const canvas = document.getElementById('game-canvas');
         const ctx = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
+        const difficultyElement = document.getElementById('difficulty');
         const gameOverElement = document.getElementById('game-over');
         const restartBtn = document.getElementById('restart-btn');
         
@@ -106,11 +116,22 @@
         let gameActive = false;
         let lastTime = 0;
         let enemySpawnTimer = 0;
-        let enemySpawnInterval = 1000;
+        let enemySpawnInterval = 1500; // Começa mais lento
         let projectiles = [];
         let canShoot = true;
         const shootDelay = 300;
         const projectileSpeed = 500;
+        let difficultyLevel = 1;
+        let gameTime = 0;
+        
+        // Configuração de dificuldade
+        const difficultySettings = {
+            baseEnemySpeed: 50,    // Velocidade inicial muito baixa
+            speedIncrement: 0.5,   // Aumento gradual por nível
+            maxEnemySpeed: 300,    // Velocidade máxima
+            spawnIntervalMin: 300, // Intervalo mínimo entre inimigos
+            spawnIntervalDecay: 0.95 // Fator de redução do intervalo
+        };
         
         // Nave do jogador
         const player = {
@@ -158,12 +179,18 @@
         let enemies = [];
         
         function spawnEnemy() {
+            // Calcula velocidade baseada na dificuldade
+            const currentSpeed = Math.min(
+                difficultySettings.baseEnemySpeed + (difficultyLevel * difficultySettings.speedIncrement),
+                difficultySettings.maxEnemySpeed
+            );
+            
             const enemy = {
                 width: 30,
                 height: 20,
                 x: Math.random() * (canvas.width - 30),
                 y: -30,
-                speed: 100 + Math.random() * 50,
+                speed: currentSpeed * (0.8 + Math.random() * 0.4), // Variação de velocidade
                 variation: Math.floor(Math.random() * 3),
                 
                 update: function(deltaTime) {
@@ -246,7 +273,7 @@
         window.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') player.movingLeft = true;
             if (e.key === 'ArrowRight') player.movingRight = true;
-            if (e.key === ' ' && canShoot) shoot(); // Barra de espaço para atirar
+            if (e.key === ' ' && canShoot) shoot();
         });
         
         window.addEventListener('keyup', (e) => {
@@ -285,14 +312,35 @@
                    obj1.y + obj1.height > obj2.y;
         }
         
+        // Atualizar dificuldade
+        function updateDifficulty(deltaTime) {
+            gameTime += deltaTime;
+            
+            // Aumenta a dificuldade a cada 15 segundos
+            difficultyLevel = Math.floor(gameTime / 15000) + 1;
+            
+            // Atualiza o intervalo de spawn de inimigos
+            enemySpawnInterval = Math.max(
+                difficultySettings.spawnIntervalMin,
+                1500 * Math.pow(difficultySettings.spawnIntervalDecay, difficultyLevel)
+            );
+            
+            // Atualiza o display
+            difficultyElement.textContent = `Dificuldade: ${difficultyLevel}`;
+        }
+        
         // Reiniciar jogo
         function startGame() {
             score = 0;
+            gameTime = 0;
+            difficultyLevel = 1;
             scoreElement.textContent = `Score: ${score}`;
+            difficultyElement.textContent = `Dificuldade: ${difficultyLevel}`;
             gameOverElement.style.display = 'none';
             gameActive = true;
             enemies = [];
             projectiles = [];
+            enemySpawnInterval = 1500;
             player.reset();
             lastTime = performance.now();
             requestAnimationFrame(gameLoop);
@@ -324,6 +372,9 @@
             const deltaTime = time - lastTime;
             lastTime = time;
             
+            // Atualiza dificuldade
+            updateDifficulty(deltaTime);
+            
             // Atualizações
             player.update(deltaTime);
             
@@ -332,7 +383,6 @@
             if (enemySpawnTimer >= enemySpawnInterval) {
                 spawnEnemy();
                 enemySpawnTimer = 0;
-                enemySpawnInterval = Math.max(200, enemySpawnInterval * 0.99);
             }
             
             // Atualiza projéteis
