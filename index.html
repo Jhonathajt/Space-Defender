@@ -118,6 +118,53 @@
             display: none;
         }
 
+        #firepower {
+            position: absolute;
+            top: 100px;
+            right: 15px;
+            color: #f80;
+            font-size: clamp(16px, 4vw, 24px);
+            text-shadow: 0 0 5px #000;
+            font-weight: bold;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 5px 10px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        #boss-health-container {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            max-width: 500px;
+            height: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 2px solid #f00;
+            border-radius: 10px;
+            display: none;
+            overflow: hidden;
+        }
+
+        #boss-health-bar {
+            height: 100%;
+            width: 100%;
+            background-color: #f00;
+            transition: width 0.3s;
+        }
+
+        #boss-health-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-weight: bold;
+            font-size: 12px;
+            text-shadow: 0 0 3px #000;
+        }
+
         #game-over, #start-menu, #pause-menu {
             position: absolute;
             top: 50%;
@@ -281,6 +328,12 @@
             </div>
             <div id="difficulty">Nível: 1</div>
             <div id="shield">Escudo: 0%</div>
+            <div id="firepower">Poder de Fogo: 0%</div>
+            
+            <div id="boss-health-container">
+                <div id="boss-health-bar"></div>
+                <div id="boss-health-text">CHEFE: 100%</div>
+            </div>
             
             <div id="start-menu">
                 <div class="menu-title">SPACE DEFENDER</div>
@@ -290,7 +343,7 @@
                     ← → para mover<br>
                     Espaço/Toque para atirar<br>
                     P/Botão para pausar<br><br>
-                    Colete power-ups para ganhar escudo temporário!
+                    Derrote a nave chefe a cada 10 níveis para bônus especiais!
                 </div>
                 <button id="start-btn" class="game-btn">Começar</button>
             </div>
@@ -330,6 +383,7 @@
         const livesElement = document.getElementById('lives');
         const livesContainer = document.getElementById('lives-container');
         const shieldElement = document.getElementById('shield');
+        const firepowerElement = document.getElementById('firepower');
         const gameOverElement = document.getElementById('game-over');
         const startMenuElement = document.getElementById('start-menu');
         const pauseMenuElement = document.getElementById('pause-menu');
@@ -341,6 +395,9 @@
         const finalScoreElement = document.getElementById('final-score');
         const touchIndicator = document.getElementById('touch-indicator');
         const touchControls = document.getElementById('touch-controls');
+        const bossHealthContainer = document.getElementById('boss-health-container');
+        const bossHealthBar = document.getElementById('boss-health-bar');
+        const bossHealthText = document.getElementById('boss-health-text');
         
         // Variáveis de ajuste de tamanho
         let baseWidth = 800;
@@ -390,8 +447,14 @@
         let shieldTime = 0;
         const maxShieldTime = 10000; // 10 segundos
         let shieldHealth = 0;
+        let firepowerTime = 0;
+        const maxFirepowerTime = 8000; // 8 segundos
+        let firepowerHealth = 0;
         let powerUps = [];
-        let explosions = []; // Array para armazenar explosões ativas
+        let explosions = [];
+        let bossActive = false;
+        let boss = null;
+        let bossSpawnedLevel = 0;
         
         // Configuração de dificuldade
         const difficultySettings = {
@@ -400,8 +463,9 @@
             maxEnemySpeed: 300,
             spawnIntervalMin: 300,
             spawnIntervalDecay: 0.95,
-            shooterSpawnChance: 0.2, // 20% de chance de spawnar um inimigo atirador
-            powerUpSpawnChance: 0.05 // 5% de chance de spawnar um power-up
+            shooterSpawnChance: 0.2,
+            powerUpSpawnChance: 0.05,
+            powerUpTypes: ['shield', 'firepower', 'life'] // Tipos de power-ups disponíveis
         };
         
         // Função para desenhar ícone de vida (mini nave do jogador)
@@ -447,23 +511,24 @@
                 lifeIcon.width = 24;
                 lifeIcon.height = 24;
                 
-                // Usamos bind para passar o canvas como 'this' para a função
                 drawLifeIcon.call(lifeIcon, 12, 12, 24);
                 
                 livesElement.appendChild(lifeIcon);
             }
         }
         
-        // Nave do jogador (aumentei o tamanho em 20%)
+        // Nave do jogador (10% maior)
         const player = {
-            width: 60 * scaleRatio, // Aumentado de 50 para 60
-            height: 48 * scaleRatio, // Aumentado de 40 para 48
-            x: canvas.width / 2 - (60 * scaleRatio) / 2,
+            width: 66 * scaleRatio, // Aumentado em 10%
+            height: 53 * scaleRatio, // Aumentado em 10%
+            x: canvas.width / 2 - (66 * scaleRatio) / 2,
             y: canvas.height - (80 * scaleRatio),
             speed: 300 * scaleRatio,
             movingLeft: false,
             movingRight: false,
             isShielded: false,
+            isFirepowerBoosted: false,
+            firepowerLevel: 1,
             
             update: function(deltaTime) {
                 const moveAmount = this.speed * deltaTime / 1000;
@@ -484,6 +549,21 @@
                         this.x + this.width / 2,
                         this.y + this.height / 2,
                         Math.max(this.width, this.height) * 0.7,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.stroke();
+                }
+                
+                // Desenha aura de poder de fogo se ativo
+                if (this.isFirepowerBoosted) {
+                    ctx.strokeStyle = `rgba(255, 150, 0, ${0.3 + firepowerHealth/100 * 0.7})`;
+                    ctx.lineWidth = 3 * scaleRatio;
+                    ctx.beginPath();
+                    ctx.arc(
+                        this.x + this.width / 2,
+                        this.y + this.height / 2,
+                        Math.max(this.width, this.height) * 0.6,
                         0,
                         Math.PI * 2
                     );
@@ -543,6 +623,10 @@
                 this.movingLeft = false;
                 this.movingRight = false;
                 this.isShielded = false;
+                this.isFirepowerBoosted = false;
+                this.firepowerLevel = 1;
+                shieldElement.style.display = 'none';
+                firepowerElement.style.display = 'none';
             },
             
             activateShield: function() {
@@ -553,7 +637,16 @@
                 shieldElement.textContent = `Escudo: ${shieldHealth}%`;
             },
             
-            updateShield: function(deltaTime) {
+            activateFirepower: function() {
+                this.isFirepowerBoosted = true;
+                this.firepowerLevel = 2; // Dobra o poder de fogo
+                firepowerHealth = 100;
+                firepowerTime = maxFirepowerTime;
+                firepowerElement.style.display = 'block';
+                firepowerElement.textContent = `Poder de Fogo: ${firepowerHealth}%`;
+            },
+            
+            updatePowerUps: function(deltaTime) {
                 if (this.isShielded) {
                     shieldTime -= deltaTime;
                     if (shieldTime <= 0) {
@@ -564,21 +657,36 @@
                         shieldElement.textContent = `Escudo: ${shieldHealth}%`;
                     }
                 }
+                
+                if (this.isFirepowerBoosted) {
+                    firepowerTime -= deltaTime;
+                    if (firepowerTime <= 0) {
+                        this.isFirepowerBoosted = false;
+                        this.firepowerLevel = 1;
+                        firepowerElement.style.display = 'none';
+                    } else {
+                        firepowerHealth = Math.floor(firepowerTime / maxFirepowerTime * 100);
+                        firepowerElement.textContent = `Poder de Fogo: ${firepowerHealth}%`;
+                    }
+                }
             }
         };
         
-        // Inimigos (aumentei o tamanho em 20%)
+        // Inimigos (com mais variedade e 10% maiores)
         let enemies = [];
         
         function spawnEnemy() {
+            if (bossActive) return; // Não spawna inimigos comuns quando o chefe está ativo
+            
             const currentSpeed = Math.min(
                 difficultySettings.baseEnemySpeed + (difficultyLevel * difficultySettings.speedIncrement),
                 difficultySettings.maxEnemySpeed
             ) * scaleRatio;
             
-            const size = 48 * scaleRatio; // Aumentado de 40 para 48
+            const size = 53 * scaleRatio; // Aumentado em 10%
             const isShooter = Math.random() < difficultySettings.shooterSpawnChance;
-            const variation = Math.floor(Math.random() * 5); // 5 tipos diferentes
+            // Agora temos 7 tipos de naves inimigas (2 novas similares ao jogador)
+            const variation = Math.floor(Math.random() * 7);
             
             const enemy = {
                 width: size,
@@ -590,7 +698,7 @@
                 isShooter: isShooter,
                 shootTimer: 0,
                 shootInterval: 2000 + Math.random() * 1000,
-                color: ['#f00', '#f80', '#f0f', '#0f8', '#88f'][variation],
+                color: ['#f00', '#f80', '#f0f', '#0f8', '#88f', '#f00', '#f80'][variation],
                 
                 update: function(deltaTime) {
                     this.y += this.speed * deltaTime / 1000;
@@ -606,6 +714,9 @@
                         }
                     } else if (this.variation === 4) {
                         this.x += Math.sin(this.y * 0.02 + this.x * 0.01) * 5 * scaleRatio;
+                    } else if (this.variation >= 5) {
+                        // As naves similares ao jogador têm movimento mais direto
+                        this.x += Math.sin(this.y * 0.01) * 2 * scaleRatio;
                     }
                     
                     // Lógica de tiro para inimigos atiradores
@@ -621,10 +732,10 @@
                 
                 shoot: function() {
                     enemyProjectiles.push({
-                        x: this.x + this.width / 2 - (6 * scaleRatio) / 2, // Ajustado para tamanho maior
+                        x: this.x + this.width / 2 - (6 * scaleRatio) / 2,
                         y: this.y + this.height,
-                        width: 10 * scaleRatio, // Aumentado de 8 para 10
-                        height: 18 * scaleRatio, // Aumentado de 15 para 18
+                        width: 10 * scaleRatio,
+                        height: 18 * scaleRatio,
                         speed: 300 * scaleRatio,
                         color: this.color,
                         draw() {
@@ -728,7 +839,7 @@
                         ctx.lineTo(this.x + this.width * 0.5, this.y + this.height * 0.6);
                         ctx.closePath();
                         ctx.fill();
-                    } else {
+                    } else if (this.variation === 4) {
                         // Nave inimiga tipo 5 - Cruiser
                         ctx.fillRect(this.x, this.y + this.height * 0.4, this.width, this.height * 0.2);
                         ctx.beginPath();
@@ -747,6 +858,63 @@
                             this.width * 0.1, 
                             this.height * 0.1
                         );
+                    } else if (this.variation === 5) {
+                        // Nave inimiga tipo 6 - Similar ao jogador (vermelha)
+                        ctx.beginPath();
+                        ctx.moveTo(this.x + this.width / 2, this.y);
+                        ctx.lineTo(this.x + this.width, this.y + this.height);
+                        ctx.lineTo(this.x, this.y + this.height);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // Detalhes
+                        ctx.fillStyle = this.darkenColor(this.color);
+                        ctx.fillRect(
+                            this.x + this.width * 0.4, 
+                            this.y + this.height * 0.5, 
+                            this.width * 0.2, 
+                            this.height * 0.5
+                        );
+                        
+                        // Motor
+                        ctx.fillStyle = '#f90';
+                        ctx.beginPath();
+                        ctx.moveTo(this.x + this.width * 0.3, this.y + this.height);
+                        ctx.lineTo(this.x + this.width * 0.7, this.y + this.height);
+                        ctx.lineTo(this.x + this.width * 0.5, this.y + this.height * 1.2);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else {
+                        // Nave inimiga tipo 7 - Similar ao jogador (laranja)
+                        ctx.beginPath();
+                        ctx.moveTo(this.x + this.width / 2, this.y);
+                        ctx.lineTo(this.x + this.width, this.y + this.height * 0.8);
+                        ctx.lineTo(this.x + this.width * 0.7, this.y + this.height);
+                        ctx.lineTo(this.x + this.width * 0.3, this.y + this.height);
+                        ctx.lineTo(this.x, this.y + this.height * 0.8);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // Detalhes
+                        ctx.fillStyle = this.darkenColor(this.color);
+                        ctx.fillRect(
+                            this.x + this.width * 0.4, 
+                            this.y + this.height * 0.4, 
+                            this.width * 0.2, 
+                            this.height * 0.4
+                        );
+                        
+                        // Janela
+                        ctx.fillStyle = '#0af';
+                        ctx.beginPath();
+                        ctx.arc(
+                            this.x + this.width / 2,
+                            this.y + this.height * 0.3,
+                            this.width * 0.1,
+                            0,
+                            Math.PI * 2
+                        );
+                        ctx.fill();
                     }
                     
                     // Indicador de atirador
@@ -755,8 +923,8 @@
                         ctx.beginPath();
                         ctx.arc(
                             this.x + this.width / 2,
-                            this.y - 12 * scaleRatio, // Ajustado para tamanho maior
-                            6 * scaleRatio, // Aumentado de 5 para 6
+                            this.y - 12 * scaleRatio,
+                            6 * scaleRatio,
                             0,
                             Math.PI * 2
                         );
@@ -765,12 +933,10 @@
                 },
                 
                 darkenColor: function(color) {
-                    // Converte cor hexadecimal para RGB
                     const r = parseInt(color.substr(1, 2), 16);
                     const g = parseInt(color.substr(3, 2), 16);
                     const b = parseInt(color.substr(5, 2), 16);
                     
-                    // Escurece a cor
                     return `rgb(${Math.floor(r * 0.7)}, ${Math.floor(g * 0.7)}, ${Math.floor(b * 0.7)})`;
                 }
             };
@@ -779,39 +945,342 @@
             
             // Chance de spawnar um power-up
             if (Math.random() < difficultySettings.powerUpSpawnChance) {
-                spawnPowerUp(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2);
+                const powerUpType = difficultySettings.powerUpTypes[
+                    Math.floor(Math.random() * difficultySettings.powerUpTypes.length)
+                ];
+                spawnPowerUp(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, powerUpType);
             }
         }
         
-        // Power-ups (aumentei o tamanho em 20%)
-        function spawnPowerUp(x, y) {
+        // Nave chefe
+        function spawnBoss() {
+            if (bossActive || difficultyLevel % 10 !== 0 || bossSpawnedLevel === difficultyLevel) return;
+            
+            bossSpawnedLevel = difficultyLevel;
+            bossActive = true;
+            bossHealthContainer.style.display = 'block';
+            
+            const bossWidth = 120 * scaleRatio;
+            const bossHeight = 80 * scaleRatio;
+            const maxHealth = 50 + difficultyLevel * 5;
+            
+            boss = {
+                width: bossWidth,
+                height: bossHeight,
+                x: canvas.width / 2 - bossWidth / 2,
+                y: -bossHeight,
+                speed: 100 * scaleRatio,
+                health: maxHealth,
+                maxHealth: maxHealth,
+                phase: 1,
+                movePattern: 0,
+                moveTimer: 0,
+                moveInterval: 3000,
+                shootTimer: 0,
+                shootInterval: 1000,
+                direction: 1,
+                
+                update: function(deltaTime) {
+                    // Movimento de entrada
+                    if (this.y < canvas.height * 0.2) {
+                        this.y += this.speed * deltaTime / 1000;
+                        return;
+                    }
+                    
+                    // Padrões de movimento
+                    this.moveTimer += deltaTime;
+                    if (this.moveTimer >= this.moveInterval) {
+                        this.movePattern = Math.floor(Math.random() * 3);
+                        this.moveTimer = 0;
+                        this.moveInterval = 2000 + Math.random() * 2000;
+                    }
+                    
+                    if (this.movePattern === 0) {
+                        // Movimento horizontal
+                        this.x += this.speed * 0.8 * this.direction * deltaTime / 1000;
+                        
+                        if (this.x <= 0) {
+                            this.x = 0;
+                            this.direction = 1;
+                        } else if (this.x >= canvas.width - this.width) {
+                            this.x = canvas.width - this.width;
+                            this.direction = -1;
+                        }
+                    } else if (this.movePattern === 1) {
+                        // Movimento em onda
+                        this.x += Math.sin(this.y * 0.02) * 4 * scaleRatio;
+                        this.y += Math.cos(this.moveTimer * 0.001) * 0.5 * scaleRatio;
+                    } else {
+                        // Movimento diagonal
+                        this.x += this.speed * 0.6 * this.direction * deltaTime / 1000;
+                        this.y += Math.sin(this.moveTimer * 0.002) * 0.8 * scaleRatio;
+                        
+                        if (this.x <= 0 || this.x >= canvas.width - this.width) {
+                            this.direction *= -1;
+                        }
+                    }
+                    
+                    // Lógica de tiro
+                    this.shootTimer += deltaTime;
+                    if (this.shootTimer >= this.shootInterval) {
+                        this.shoot();
+                        this.shootTimer = 0;
+                        this.shootInterval = 800 + Math.random() * 500;
+                    }
+                    
+                    // Atualiza barra de vida
+                    const healthPercent = Math.floor((this.health / this.maxHealth) * 100);
+                    bossHealthBar.style.width = `${healthPercent}%`;
+                    bossHealthText.textContent = `CHEFE: ${healthPercent}%`;
+                    
+                    // Muda cor da barra conforme a vida
+                    if (healthPercent > 60) {
+                        bossHealthBar.style.backgroundColor = '#0f0';
+                    } else if (healthPercent > 30) {
+                        bossHealthBar.style.backgroundColor = '#ff0';
+                    } else {
+                        bossHealthBar.style.backgroundColor = '#f00';
+                    }
+                },
+                
+                shoot: function() {
+                    // Tiros padrão
+                    for (let i = 0; i < 3; i++) {
+                        enemyProjectiles.push({
+                            x: this.x + this.width / 2 - (10 * scaleRatio) / 2,
+                            y: this.y + this.height,
+                            width: 12 * scaleRatio,
+                            height: 24 * scaleRatio,
+                            speed: 350 * scaleRatio,
+                            color: '#f00',
+                            draw() {
+                                const gradient = ctx.createLinearGradient(
+                                    this.x, this.y,
+                                    this.x, this.y + this.height
+                                );
+                                gradient.addColorStop(0, '#f00');
+                                gradient.addColorStop(1, '#800');
+                                
+                                ctx.fillStyle = gradient;
+                                ctx.fillRect(this.x, this.y, this.width, this.height);
+                                
+                                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                                ctx.fillRect(this.x, this.y, this.width, this.height * 0.2);
+                            },
+                            update(deltaTime) {
+                                this.y += this.speed * deltaTime / 1000;
+                            }
+                        });
+                    }
+                    
+                    // Tiros especiais em fases avançadas
+                    if (this.health < this.maxHealth * 0.5) {
+                        for (let angle = 0; angle < Math.PI * 2; angle += Math.PI / 4) {
+                            enemyProjectiles.push({
+                                x: this.x + this.width / 2 - (8 * scaleRatio) / 2,
+                                y: this.y + this.height / 2,
+                                width: 8 * scaleRatio,
+                                height: 8 * scaleRatio,
+                                speed: 200 * scaleRatio,
+                                angle: angle,
+                                color: '#f80',
+                                draw() {
+                                    ctx.fillStyle = this.color;
+                                    ctx.beginPath();
+                                    ctx.arc(this.x, this.y, this.width / 2, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    
+                                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                                    ctx.beginPath();
+                                    ctx.arc(this.x, this.y, this.width / 3, 0, Math.PI * 2);
+                                    ctx.fill();
+                                },
+                                update(deltaTime) {
+                                    this.x += Math.cos(this.angle) * this.speed * deltaTime / 1000;
+                                    this.y += Math.sin(this.angle) * this.speed * deltaTime / 1000;
+                                }
+                            });
+                        }
+                    }
+                },
+                
+                draw: function() {
+                    // Corpo principal
+                    ctx.fillStyle = '#800';
+                    ctx.fillRect(this.x, this.y, this.width, this.height);
+                    
+                    // Detalhes
+                    ctx.fillStyle = '#a00';
+                    ctx.fillRect(this.x + this.width * 0.2, this.y, this.width * 0.6, this.height * 0.3);
+                    
+                    // Canhões
+                    ctx.fillStyle = '#444';
+                    for (let i = 0; i < 3; i++) {
+                        ctx.fillRect(
+                            this.x + this.width * (0.2 + i * 0.3),
+                            this.y - 10 * scaleRatio,
+                            this.width * 0.1,
+                            10 * scaleRatio
+                        );
+                    }
+                    
+                    // Janela
+                    ctx.fillStyle = '#0af';
+                    ctx.beginPath();
+                    ctx.arc(
+                        this.x + this.width / 2,
+                        this.y + this.height * 0.4,
+                        this.width * 0.15,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    // Escudo se estiver com mais de 50% de vida
+                    if (this.health > this.maxHealth * 0.5) {
+                        ctx.strokeStyle = `rgba(0, 100, 255, 0.5)`;
+                        ctx.lineWidth = 3 * scaleRatio;
+                        ctx.beginPath();
+                        ctx.arc(
+                            this.x + this.width / 2,
+                            this.y + this.height / 2,
+                            Math.max(this.width, this.height) * 0.8,
+                            0,
+                            Math.PI * 2
+                        );
+                        ctx.stroke();
+                    }
+                },
+                
+                takeDamage: function(damage) {
+                    this.health -= damage;
+                    
+                    if (this.health <= 0) {
+                        createExplosion(
+                            this.x + this.width / 2,
+                            this.y + this.height / 2,
+                            'random',
+                            2.0,
+                            true
+                        );
+                        
+                        // Recompensa por derrotar o chefe
+                        score += 500;
+                        scoreElement.textContent = `Score: ${score}`;
+                        
+                        // Chance de dropar power-ups especiais
+                        if (Math.random() < 0.7) {
+                            spawnPowerUp(this.x + this.width / 2, this.y + this.height / 2, 'shield');
+                        }
+                        if (Math.random() < 0.7) {
+                            spawnPowerUp(this.x + this.width / 2, this.y + this.height / 2, 'firepower');
+                        }
+                        if (lives < 4 && Math.random() < 0.5) {
+                            spawnPowerUp(this.x + this.width / 2, this.y + this.height / 2, 'life');
+                        }
+                        
+                        bossActive = false;
+                        bossHealthContainer.style.display = 'none';
+                    } else {
+                        createExplosion(
+                            this.x + this.width * Math.random(),
+                            this.y + this.height * Math.random(),
+                            '#f00',
+                            0.5
+                        );
+                    }
+                }
+            };
+        }
+        
+        // Power-ups
+        function spawnPowerUp(x, y, type) {
+            const size = 24 * scaleRatio;
+            const colors = {
+                shield: '#0af',
+                firepower: '#f80',
+                life: '#0f0'
+            };
+            
             powerUps.push({
                 x: x,
                 y: y,
-                width: 24 * scaleRatio, // Aumentado de 20 para 24
-                height: 24 * scaleRatio, // Aumentado de 20 para 24
-                type: 'shield', // Poderia ter outros tipos no futuro
+                width: size,
+                height: size,
+                type: type,
                 speed: 100 * scaleRatio,
                 draw() {
-                    // Desenha o power-up de escudo
-                    ctx.fillStyle = '#0af';
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, this.width / 2, 0, Math.PI * 2);
-                    ctx.fill();
+                    // Desenha o power-up
+                    ctx.fillStyle = colors[this.type];
                     
-                    ctx.strokeStyle = '#fff';
-                    ctx.lineWidth = 2 * scaleRatio;
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, this.width / 2 - 3 * scaleRatio, 0, Math.PI * 2);
-                    ctx.stroke();
-                    
-                    ctx.fillStyle = '#fff';
-                    ctx.beginPath();
-                    ctx.moveTo(this.x, this.y - this.width / 3);
-                    ctx.lineTo(this.x + this.width / 4, this.y + this.width / 6);
-                    ctx.lineTo(this.x - this.width / 4, this.y + this.width / 6);
-                    ctx.closePath();
-                    ctx.fill();
+                    if (this.type === 'shield') {
+                        // Power-up de escudo
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, this.width / 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 2 * scaleRatio;
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, this.width / 2 - 3 * scaleRatio, 0, Math.PI * 2);
+                        ctx.stroke();
+                        
+                        ctx.fillStyle = '#fff';
+                        ctx.beginPath();
+                        ctx.moveTo(this.x, this.y - this.width / 3);
+                        ctx.lineTo(this.x + this.width / 4, this.y + this.width / 6);
+                        ctx.lineTo(this.x - this.width / 4, this.y + this.width / 6);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else if (this.type === 'firepower') {
+                        // Power-up de fogo
+                        ctx.beginPath();
+                        ctx.moveTo(this.x, this.y - this.width / 3);
+                        ctx.lineTo(this.x + this.width / 3, this.y + this.width / 3);
+                        ctx.lineTo(this.x - this.width / 3, this.y + this.width / 3);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // Chamas
+                        ctx.fillStyle = '#f60';
+                        ctx.beginPath();
+                        ctx.moveTo(this.x, this.y - this.width / 4);
+                        ctx.lineTo(this.x + this.width / 4, this.y + this.width / 6);
+                        ctx.lineTo(this.x - this.width / 4, this.y + this.width / 6);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.fillStyle = '#f40';
+                        ctx.beginPath();
+                        ctx.moveTo(this.x, this.y - this.width / 6);
+                        ctx.lineTo(this.x + this.width / 6, this.y);
+                        ctx.lineTo(this.x - this.width / 6, this.y);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else {
+                        // Power-up de vida
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, this.width / 2, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.fillStyle = '#fff';
+                        ctx.beginPath();
+                        ctx.moveTo(this.x - this.width / 3, this.y);
+                        ctx.lineTo(this.x, this.y - this.width / 3);
+                        ctx.lineTo(this.x + this.width / 3, this.y);
+                        ctx.lineTo(this.x, this.y + this.width / 3);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        ctx.fillStyle = colors[this.type];
+                        ctx.beginPath();
+                        ctx.moveTo(this.x, this.y - this.width / 4);
+                        ctx.lineTo(this.x + this.width / 4, this.y);
+                        ctx.lineTo(this.x, this.y + this.width / 4);
+                        ctx.lineTo(this.x - this.width / 4, this.y);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
                 },
                 update(deltaTime) {
                     this.y += this.speed * deltaTime / 1000;
@@ -828,7 +1297,7 @@
                 sizeMultiplier: sizeMultiplier,
                 isPlayerKill: isPlayerKill,
                 particles: [],
-                duration: 500, // 0.5 segundos
+                duration: 500,
                 elapsed: 0,
                 
                 init: function() {
@@ -872,7 +1341,6 @@
                         );
                         ctx.fill();
                         
-                        // Partículas menores e mais claras para efeito de brilho
                         if (i % 3 === 0) {
                             ctx.fillStyle = `rgba(255, 255, 255, ${fade * (0.3 + Math.random() * 0.4)})`;
                             ctx.beginPath();
@@ -887,9 +1355,7 @@
                         }
                     }
                     
-                    // Efeito adicional para kills do jogador
                     if (this.isPlayerKill) {
-                        // Anel de explosão
                         ctx.strokeStyle = `rgba(255, 200, 0, ${fade * 0.7})`;
                         ctx.lineWidth = 2 * scaleRatio;
                         ctx.globalAlpha = fade;
@@ -903,7 +1369,6 @@
                         );
                         ctx.stroke();
                         
-                        // Centelhas
                         for (let i = 0; i < 5; i++) {
                             const angle = Math.random() * Math.PI * 2;
                             const length = (10 + Math.random() * 20) * scaleRatio * this.sizeMultiplier * progress;
@@ -920,7 +1385,7 @@
                         }
                     }
                     
-                    ctx.globalAlpha = 1; // Reset alpha
+                    ctx.globalAlpha = 1;
                 }
             };
             
@@ -928,48 +1393,88 @@
             explosions.push(explosion);
         }
         
-        // Sistema de tiros do jogador (aumentei o tamanho em 20%)
+        // Sistema de tiros do jogador
         function shoot() {
-            const projectileWidth = (7 + Math.floor(difficultyLevel / 10)) * scaleRatio; // Aumentado de 6 para 7
-            const projectileHeight = (24 + Math.floor(difficultyLevel / 5)) * scaleRatio; // Aumentado de 20 para 24
-            const damageMultiplier = 1 + Math.floor(difficultyLevel / 10) * 0.5;
+            const baseWidth = 7 + Math.floor(difficultyLevel / 10);
+            const baseHeight = 24 + Math.floor(difficultyLevel / 5);
             
-            projectiles.push({
-                x: player.x + player.width / 2 - projectileWidth / 2,
-                y: player.y,
-                width: projectileWidth,
-                height: projectileHeight,
-                speed: projectileSpeed,
-                damage: damageMultiplier,
-                draw() {
-                    // Gradiente para o projétil
-                    const gradient = ctx.createLinearGradient(
-                        this.x, this.y,
-                        this.x, this.y + this.height
-                    );
-                    gradient.addColorStop(0, '#0ff');
-                    gradient.addColorStop(1, '#08f');
+            // Aumenta o poder de fogo se o boost estiver ativo
+            const powerMultiplier = player.firepowerLevel;
+            const projectileWidth = baseWidth * scaleRatio * powerMultiplier;
+            const projectileHeight = baseHeight * scaleRatio * powerMultiplier;
+            const damageMultiplier = (1 + Math.floor(difficultyLevel / 10) * 0.5) * powerMultiplier;
+            
+            // Se o poder de fogo estiver ativado, cria dois projéteis adicionais com pequeno ângulo
+            if (player.isFirepowerBoosted) {
+                for (let i = -1; i <= 1; i++) {
+                    const angle = i * 0.1; // Pequeno ângulo para os projéteis laterais
                     
-                    ctx.fillStyle = gradient;
-                    ctx.fillRect(this.x, this.y, this.width, this.height);
-                    
-                    // Efeito de brilho
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                    ctx.fillRect(this.x, this.y, this.width, this.height * 0.2);
-                    
-                    // Cauda do projétil
-                    ctx.fillStyle = 'rgba(0, 200, 255, 0.3)';
-                    ctx.fillRect(this.x - this.width * 0.5, this.y + this.height, this.width * 2, this.height * 0.5);
-                },
-                update(deltaTime) {
-                    this.y -= this.speed * deltaTime / 1000;
+                    projectiles.push({
+                        x: player.x + player.width / 2 - projectileWidth / 2,
+                        y: player.y,
+                        width: projectileWidth,
+                        height: projectileHeight,
+                        speed: projectileSpeed,
+                        damage: damageMultiplier,
+                        angle: angle,
+                        draw() {
+                            const gradient = ctx.createLinearGradient(
+                                this.x, this.y,
+                                this.x, this.y + this.height
+                            );
+                            gradient.addColorStop(0, '#0ff');
+                            gradient.addColorStop(1, '#08f');
+                            
+                            ctx.fillStyle = gradient;
+                            ctx.fillRect(this.x, this.y, this.width, this.height);
+                            
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                            ctx.fillRect(this.x, this.y, this.width, this.height * 0.2);
+                            
+                            ctx.fillStyle = 'rgba(0, 200, 255, 0.3)';
+                            ctx.fillRect(this.x - this.width * 0.5, this.y + this.height, this.width * 2, this.height * 0.5);
+                        },
+                        update(deltaTime) {
+                            this.y -= this.speed * deltaTime / 1000;
+                            this.x += Math.sin(this.angle) * 100 * deltaTime / 1000;
+                        }
+                    });
                 }
-            });
+            } else {
+                // Tiro normal (único)
+                projectiles.push({
+                    x: player.x + player.width / 2 - projectileWidth / 2,
+                    y: player.y,
+                    width: projectileWidth,
+                    height: projectileHeight,
+                    speed: projectileSpeed,
+                    damage: damageMultiplier,
+                    draw() {
+                        const gradient = ctx.createLinearGradient(
+                            this.x, this.y,
+                            this.x, this.y + this.height
+                        );
+                        gradient.addColorStop(0, '#0ff');
+                        gradient.addColorStop(1, '#08f');
+                        
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(this.x, this.y, this.width, this.height);
+                        
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                        ctx.fillRect(this.x, this.y, this.width, this.height * 0.2);
+                        
+                        ctx.fillStyle = 'rgba(0, 200, 255, 0.3)';
+                        ctx.fillRect(this.x - this.width * 0.5, this.y + this.height, this.width * 2, this.height * 0.5);
+                    },
+                    update(deltaTime) {
+                        this.y -= this.speed * deltaTime / 1000;
+                    }
+                });
+            }
             
             canShoot = false;
-            setTimeout(() => canShoot = true, shootDelay);
+            setTimeout(() => canShoot = true, shootDelay / powerMultiplier);
             
-            // Feedback visual do tiro
             if (isMobile) {
                 touchIndicator.style.display = 'block';
                 touchIndicator.style.backgroundColor = 'rgba(0, 255, 255, 0.3)';
@@ -1027,14 +1532,12 @@
                 touchIndicator.style.display = 'none';
             });
             
-            // Controle de tiro (toque no centro)
             canvas.addEventListener('touchstart', (e) => {
                 if (!gameActive || gamePaused) return;
                 const touchX = e.touches[0].clientX;
                 const canvasRect = canvas.getBoundingClientRect();
                 const canvasX = touchX - canvasRect.left;
                 
-                // Se não for nas áreas laterais, é tiro
                 if (canShoot && 
                     canvasX > canvasRect.width * 0.3 && 
                     canvasX < canvasRect.width * 0.7) {
@@ -1065,7 +1568,6 @@
             }, 100);
         }
         
-        // Pausar/despausar o jogo
         function togglePause() {
             if (!gameActive) return;
             
@@ -1075,12 +1577,11 @@
                 pauseMenuElement.style.display = 'block';
             } else {
                 pauseMenuElement.style.display = 'none';
-                lastTime = performance.now(); // Reset timer para evitar salto no deltaTime
+                lastTime = performance.now();
                 requestAnimationFrame(gameLoop);
             }
         }
         
-        // Colisão
         function checkCollision(obj1, obj2) {
             return obj1.x < obj2.x + obj2.width &&
                    obj1.x + obj1.width > obj2.x &&
@@ -1088,10 +1589,18 @@
                    obj1.y + obj1.height > obj2.y;
         }
         
-        // Atualizar dificuldade
         function updateDifficulty(deltaTime) {
             gameTime += deltaTime;
-            difficultyLevel = Math.floor(gameTime / 15000) + 1;
+            const newLevel = Math.floor(gameTime / 15000) + 1;
+            
+            if (newLevel !== difficultyLevel) {
+                difficultyLevel = newLevel;
+                
+                // Verifica se é hora de spawnar o chefe
+                if (difficultyLevel % 10 === 0 && !bossActive && bossSpawnedLevel !== difficultyLevel) {
+                    spawnBoss();
+                }
+            }
             
             enemySpawnInterval = Math.max(
                 difficultySettings.spawnIntervalMin,
@@ -1101,7 +1610,6 @@
             difficultyElement.textContent = `Nível: ${difficultyLevel}`;
         }
         
-        // Reiniciar jogo
         function startGame() {
             score = 0;
             gameTime = 0;
@@ -1111,6 +1619,8 @@
             difficultyElement.textContent = `Nível: ${difficultyLevel}`;
             updateLivesDisplay();
             shieldElement.style.display = 'none';
+            firepowerElement.style.display = 'none';
+            bossHealthContainer.style.display = 'none';
             gameOverElement.style.display = 'none';
             startMenuElement.style.display = 'none';
             pauseMenuElement.style.display = 'none';
@@ -1121,13 +1631,15 @@
             projectiles = [];
             powerUps = [];
             explosions = [];
+            bossActive = false;
+            boss = null;
+            bossSpawnedLevel = 0;
             enemySpawnInterval = 1500;
             player.reset();
             lastTime = performance.now();
             requestAnimationFrame(gameLoop);
         }
         
-        // Perder uma vida
         function loseLife() {
             lives--;
             updateLivesDisplay();
@@ -1135,13 +1647,8 @@
             if (lives <= 0) {
                 gameOver();
             } else {
-                // Reseta a posição do jogador após perder uma vida
                 player.reset();
-                
-                // Limpa todos os projéteis inimigos
                 enemyProjectiles = [];
-                
-                // Pequena pausa para o jogador se reorientar
                 gameActive = false;
                 setTimeout(() => {
                     gameActive = true;
@@ -1151,25 +1658,20 @@
             }
         }
         
-        // Game over
         function gameOver() {
             gameActive = false;
             finalScoreElement.textContent = `Pontuação: ${score}`;
             gameOverElement.style.display = 'block';
         }
         
-        // Estrelas de fundo (melhorado)
         function drawStars() {
             const starCount = isMobile ? 100 : 150;
             const now = Date.now() * 0.05;
             
             for (let i = 0; i < starCount; i++) {
-                // Posições fixas baseadas em hash simples para evitar flickering
                 const hash = Math.sin(i * 100) * 10000;
                 const x = Math.abs((hash + i * 50) % canvas.width);
                 const y = (Math.abs(hash) + now) % canvas.height;
-                
-                // Tamanho e brilho variados
                 const size = 0.5 + Math.abs(Math.sin(hash)) * 2.5;
                 const opacity = 0.5 + Math.abs(Math.sin(hash * 0.3)) * 0.5;
                 
@@ -1180,7 +1682,6 @@
             }
         }
         
-        // Loop principal do jogo
         function gameLoop(time) {
             if (!gameActive || gamePaused) return;
             
@@ -1189,16 +1690,18 @@
             
             updateDifficulty(deltaTime);
             player.update(deltaTime);
-            player.updateShield(deltaTime);
+            player.updatePowerUps(deltaTime);
             
-            // Spawn de inimigos
-            enemySpawnTimer += deltaTime;
-            if (enemySpawnTimer >= enemySpawnInterval) {
-                spawnEnemy();
-                enemySpawnTimer = 0;
+            if (bossActive) {
+                boss.update(deltaTime);
+            } else {
+                enemySpawnTimer += deltaTime;
+                if (enemySpawnTimer >= enemySpawnInterval) {
+                    spawnEnemy();
+                    enemySpawnTimer = 0;
+                }
             }
             
-            // Atualiza projéteis do jogador
             for (let i = projectiles.length - 1; i >= 0; i--) {
                 projectiles[i].update(deltaTime);
                 
@@ -1207,6 +1710,7 @@
                     continue;
                 }
                 
+                // Verifica colisão com inimigos comuns
                 for (let j = enemies.length - 1; j >= 0; j--) {
                     if (checkCollision(projectiles[i], enemies[j])) {
                         createExplosion(
@@ -1214,7 +1718,7 @@
                             enemies[j].y + enemies[j].height / 2,
                             enemies[j].color,
                             0.8,
-                            true // Indica que foi um kill do jogador
+                            true
                         );
                         enemies.splice(j, 1);
                         projectiles.splice(i, 1);
@@ -1223,9 +1727,14 @@
                         break;
                     }
                 }
+                
+                // Verifica colisão com o chefe
+                if (bossActive && checkCollision(projectiles[i], boss)) {
+                    boss.takeDamage(projectiles[i].damage);
+                    projectiles.splice(i, 1);
+                }
             }
             
-            // Atualiza projéteis inimigos
             for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
                 enemyProjectiles[i].update(deltaTime);
                 
@@ -1236,8 +1745,7 @@
                 
                 if (checkCollision(player, enemyProjectiles[i])) {
                     if (player.isShielded) {
-                        // Reduz o escudo em vez de perder vida
-                        shieldTime -= maxShieldTime * 0.2; // Perde 20% do escudo
+                        shieldTime -= maxShieldTime * 0.2;
                         if (shieldTime < 0) shieldTime = 0;
                         createExplosion(
                             enemyProjectiles[i].x + enemyProjectiles[i].width / 2,
@@ -1258,7 +1766,6 @@
                 }
             }
             
-            // Atualiza inimigos
             for (let i = enemies.length - 1; i >= 0; i--) {
                 enemies[i].update(deltaTime);
                 
@@ -1271,8 +1778,7 @@
                     );
                     
                     if (player.isShielded) {
-                        // Reduz o escudo significativamente por colisão
-                        shieldTime -= maxShieldTime * 0.5; // Perde 50% do escudo
+                        shieldTime -= maxShieldTime * 0.5;
                         if (shieldTime < 0) shieldTime = 0;
                     } else {
                         createExplosion(
@@ -1295,20 +1801,25 @@
                 }
             }
             
-            // Atualiza power-ups
             for (let i = powerUps.length - 1; i >= 0; i--) {
                 powerUps[i].update(deltaTime);
                 
                 if (checkCollision(player, powerUps[i])) {
                     if (powerUps[i].type === 'shield') {
                         player.activateShield();
-                        createExplosion(
-                            powerUps[i].x,
-                            powerUps[i].y,
-                            '#0af',
-                            0.6
-                        );
+                    } else if (powerUps[i].type === 'firepower') {
+                        player.activateFirepower();
+                    } else if (powerUps[i].type === 'life' && lives < 4) {
+                        lives++;
+                        updateLivesDisplay();
                     }
+                    createExplosion(
+                        powerUps[i].x,
+                        powerUps[i].y,
+                        powerUps[i].type === 'shield' ? '#0af' : 
+                        powerUps[i].type === 'firepower' ? '#f80' : '#0f0',
+                        0.6
+                    );
                     powerUps.splice(i, 1);
                     continue;
                 }
@@ -1318,7 +1829,6 @@
                 }
             }
             
-            // Atualiza explosões
             for (let i = explosions.length - 1; i >= 0; i--) {
                 if (!explosions[i].update(deltaTime)) {
                     explosions.splice(i, 1);
@@ -1334,30 +1844,25 @@
             enemies.forEach(enemy => enemy.draw());
             enemyProjectiles.forEach(projectile => projectile.draw());
             projectiles.forEach(projectile => projectile.draw());
-            
-            // Desenha explosões
             explosions.forEach(explosion => explosion.draw());
-            
+            if (bossActive) boss.draw();
             player.draw();
             
             requestAnimationFrame(gameLoop);
         }
         
-        // Configura controles baseado no dispositivo
         if (isMobile) {
             setupMobileControls();
         } else {
             setupPcControls();
         }
         
-        // Event listeners para botões
         startBtn.addEventListener('click', startGame);
         resumeBtn.addEventListener('click', togglePause);
         restartBtn.addEventListener('click', startGame);
         restartBtnEnd.addEventListener('click', startGame);
         pauseBtn.addEventListener('click', togglePause);
         
-        // Mostra o menu inicial
         startMenuElement.style.display = 'block';
         updateLivesDisplay();
     </script>
