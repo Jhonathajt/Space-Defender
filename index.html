@@ -391,6 +391,7 @@
         const maxShieldTime = 10000; // 10 segundos
         let shieldHealth = 0;
         let powerUps = [];
+        let explosions = []; // Array para armazenar explosões ativas
         
         // Configuração de dificuldade
         const difficultySettings = {
@@ -453,11 +454,11 @@
             }
         }
         
-        // Nave do jogador
+        // Nave do jogador (aumentei o tamanho em 20%)
         const player = {
-            width: 50 * scaleRatio,
-            height: 40 * scaleRatio,
-            x: canvas.width / 2 - (50 * scaleRatio) / 2,
+            width: 60 * scaleRatio, // Aumentado de 50 para 60
+            height: 48 * scaleRatio, // Aumentado de 40 para 48
+            x: canvas.width / 2 - (60 * scaleRatio) / 2,
             y: canvas.height - (80 * scaleRatio),
             speed: 300 * scaleRatio,
             movingLeft: false,
@@ -566,7 +567,7 @@
             }
         };
         
-        // Inimigos (maior variedade)
+        // Inimigos (aumentei o tamanho em 20%)
         let enemies = [];
         
         function spawnEnemy() {
@@ -575,7 +576,7 @@
                 difficultySettings.maxEnemySpeed
             ) * scaleRatio;
             
-            const size = 40 * scaleRatio;
+            const size = 48 * scaleRatio; // Aumentado de 40 para 48
             const isShooter = Math.random() < difficultySettings.shooterSpawnChance;
             const variation = Math.floor(Math.random() * 5); // 5 tipos diferentes
             
@@ -620,10 +621,10 @@
                 
                 shoot: function() {
                     enemyProjectiles.push({
-                        x: this.x + this.width / 2 - (5 * scaleRatio) / 2,
+                        x: this.x + this.width / 2 - (6 * scaleRatio) / 2, // Ajustado para tamanho maior
                         y: this.y + this.height,
-                        width: 8 * scaleRatio,
-                        height: 15 * scaleRatio,
+                        width: 10 * scaleRatio, // Aumentado de 8 para 10
+                        height: 18 * scaleRatio, // Aumentado de 15 para 18
                         speed: 300 * scaleRatio,
                         color: this.color,
                         draw() {
@@ -754,8 +755,8 @@
                         ctx.beginPath();
                         ctx.arc(
                             this.x + this.width / 2,
-                            this.y - 10 * scaleRatio,
-                            5 * scaleRatio,
+                            this.y - 12 * scaleRatio, // Ajustado para tamanho maior
+                            6 * scaleRatio, // Aumentado de 5 para 6
                             0,
                             Math.PI * 2
                         );
@@ -782,13 +783,13 @@
             }
         }
         
-        // Power-ups
+        // Power-ups (aumentei o tamanho em 20%)
         function spawnPowerUp(x, y) {
             powerUps.push({
                 x: x,
                 y: y,
-                width: 20 * scaleRatio,
-                height: 20 * scaleRatio,
+                width: 24 * scaleRatio, // Aumentado de 20 para 24
+                height: 24 * scaleRatio, // Aumentado de 20 para 24
                 type: 'shield', // Poderia ter outros tipos no futuro
                 speed: 100 * scaleRatio,
                 draw() {
@@ -818,10 +819,119 @@
             });
         }
         
-        // Sistema de tiros do jogador (melhorado a cada 10 níveis)
+        // Sistema de explosões
+        function createExplosion(x, y, color = '#f90', sizeMultiplier = 1, isPlayerKill = false) {
+            const explosion = {
+                x: x,
+                y: y,
+                color: color,
+                sizeMultiplier: sizeMultiplier,
+                isPlayerKill: isPlayerKill,
+                particles: [],
+                duration: 500, // 0.5 segundos
+                elapsed: 0,
+                
+                init: function() {
+                    const particleCount = this.isPlayerKill ? 25 : 15;
+                    const baseSize = 4 * scaleRatio * this.sizeMultiplier;
+                    
+                    for (let i = 0; i < particleCount; i++) {
+                        this.particles.push({
+                            angle: Math.random() * Math.PI * 2,
+                            speed: (1 + Math.random() * 6) * scaleRatio * this.sizeMultiplier,
+                            size: (0.5 + Math.random() * 3) * scaleRatio * this.sizeMultiplier,
+                            color: this.color === 'random' ? 
+                                `hsl(${Math.random() * 60 + 20}, 100%, 50%)` : this.color
+                        });
+                    }
+                },
+                
+                update: function(deltaTime) {
+                    this.elapsed += deltaTime;
+                    return this.elapsed < this.duration;
+                },
+                
+                draw: function() {
+                    const progress = this.elapsed / this.duration;
+                    const fade = 1 - progress;
+                    
+                    // Desenha partículas
+                    for (let i = 0; i < this.particles.length; i++) {
+                        const p = this.particles[i];
+                        const distance = p.speed * progress * 2;
+                        
+                        ctx.fillStyle = p.color;
+                        ctx.globalAlpha = fade * 0.8;
+                        ctx.beginPath();
+                        ctx.arc(
+                            this.x + Math.cos(p.angle) * distance,
+                            this.y + Math.sin(p.angle) * distance,
+                            p.size * (1 - progress * 0.5),
+                            0,
+                            Math.PI * 2
+                        );
+                        ctx.fill();
+                        
+                        // Partículas menores e mais claras para efeito de brilho
+                        if (i % 3 === 0) {
+                            ctx.fillStyle = `rgba(255, 255, 255, ${fade * (0.3 + Math.random() * 0.4)})`;
+                            ctx.beginPath();
+                            ctx.arc(
+                                this.x + Math.cos(p.angle) * distance * 0.7,
+                                this.y + Math.sin(p.angle) * distance * 0.7,
+                                p.size * 0.6 * (1 - progress * 0.5),
+                                0,
+                                Math.PI * 2
+                            );
+                            ctx.fill();
+                        }
+                    }
+                    
+                    // Efeito adicional para kills do jogador
+                    if (this.isPlayerKill) {
+                        // Anel de explosão
+                        ctx.strokeStyle = `rgba(255, 200, 0, ${fade * 0.7})`;
+                        ctx.lineWidth = 2 * scaleRatio;
+                        ctx.globalAlpha = fade;
+                        ctx.beginPath();
+                        ctx.arc(
+                            this.x, 
+                            this.y, 
+                            15 * scaleRatio * this.sizeMultiplier * progress, 
+                            0, 
+                            Math.PI * 2
+                        );
+                        ctx.stroke();
+                        
+                        // Centelhas
+                        for (let i = 0; i < 5; i++) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const length = (10 + Math.random() * 20) * scaleRatio * this.sizeMultiplier * progress;
+                            
+                            ctx.strokeStyle = `rgba(255, ${100 + Math.random() * 155}, 0, ${fade * 0.8})`;
+                            ctx.lineWidth = 1 * scaleRatio;
+                            ctx.beginPath();
+                            ctx.moveTo(this.x, this.y);
+                            ctx.lineTo(
+                                this.x + Math.cos(angle) * length,
+                                this.y + Math.sin(angle) * length
+                            );
+                            ctx.stroke();
+                        }
+                    }
+                    
+                    ctx.globalAlpha = 1; // Reset alpha
+                }
+            };
+            
+            explosion.init();
+            explosions.push(explosion);
+        }
+        
+        // Sistema de tiros do jogador (aumentei o tamanho em 20%)
         function shoot() {
-            const projectileWidth = (6 + Math.floor(difficultyLevel / 10)) * scaleRatio;
-            const projectileHeight = (20 + Math.floor(difficultyLevel / 5)) * scaleRatio;
+            const projectileWidth = (7 + Math.floor(difficultyLevel / 10)) * scaleRatio; // Aumentado de 6 para 7
+            const projectileHeight = (24 + Math.floor(difficultyLevel / 5)) * scaleRatio; // Aumentado de 20 para 24
             const damageMultiplier = 1 + Math.floor(difficultyLevel / 10) * 0.5;
             
             projectiles.push({
@@ -1010,6 +1120,7 @@
             enemyProjectiles = [];
             projectiles = [];
             powerUps = [];
+            explosions = [];
             enemySpawnInterval = 1500;
             player.reset();
             lastTime = performance.now();
@@ -1066,72 +1177,6 @@
                 ctx.beginPath();
                 ctx.arc(x, y, size * scaleRatio, 0, Math.PI * 2);
                 ctx.fill();
-            }
-        }
-        
-        // Efeito de explosão (melhorado)
-        function createExplosion(x, y, color = '#f90', sizeMultiplier = 1, isPlayerKill = false) {
-            const particleCount = isPlayerKill ? 25 : 15;
-            const baseSize = 4 * scaleRatio * sizeMultiplier;
-            
-            // Explosão principal
-            for (let i = 0; i < particleCount; i++) {
-                const angle = Math.random() * Math.PI * 2;
-                const speed = (1 + Math.random() * 6) * scaleRatio * sizeMultiplier;
-                const size = (0.5 + Math.random() * 3) * scaleRatio * sizeMultiplier;
-                const particleColor = color === 'random' ? 
-                    `hsl(${Math.random() * 60 + 20}, 100%, 50%)` : color;
-                
-                ctx.fillStyle = particleColor;
-                ctx.beginPath();
-                ctx.arc(
-                    x + Math.cos(angle) * speed * 2,
-                    y + Math.sin(angle) * speed * 2,
-                    size,
-                    0,
-                    Math.PI * 2
-                );
-                ctx.fill();
-                
-                // Partículas menores e mais claras para efeito de brilho
-                if (i % 3 === 0) {
-                    ctx.fillStyle = `rgba(255, 255, 255, ${0.3 + Math.random() * 0.4})`;
-                    ctx.beginPath();
-                    ctx.arc(
-                        x + Math.cos(angle) * speed,
-                        y + Math.sin(angle) * speed,
-                        size * 0.6,
-                        0,
-                        Math.PI * 2
-                    );
-                    ctx.fill();
-                }
-            }
-            
-            // Efeito adicional para kills do jogador
-            if (isPlayerKill) {
-                // Anel de explosão
-                ctx.strokeStyle = `rgba(255, 200, 0, 0.7)`;
-                ctx.lineWidth = 2 * scaleRatio;
-                ctx.beginPath();
-                ctx.arc(x, y, 15 * scaleRatio * sizeMultiplier, 0, Math.PI * 2);
-                ctx.stroke();
-                
-                // Centelhas
-                for (let i = 0; i < 5; i++) {
-                    const angle = Math.random() * Math.PI * 2;
-                    const length = 10 + Math.random() * 20 * scaleRatio * sizeMultiplier;
-                    
-                    ctx.strokeStyle = `rgba(255, ${100 + Math.random() * 155}, 0, 0.8)`;
-                    ctx.lineWidth = 1 * scaleRatio;
-                    ctx.beginPath();
-                    ctx.moveTo(x, y);
-                    ctx.lineTo(
-                        x + Math.cos(angle) * length,
-                        y + Math.sin(angle) * length
-                    );
-                    ctx.stroke();
-                }
             }
         }
         
@@ -1273,6 +1318,13 @@
                 }
             }
             
+            // Atualiza explosões
+            for (let i = explosions.length - 1; i >= 0; i--) {
+                if (!explosions[i].update(deltaTime)) {
+                    explosions.splice(i, 1);
+                }
+            }
+            
             // Renderização
             ctx.fillStyle = '#111';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1282,6 +1334,10 @@
             enemies.forEach(enemy => enemy.draw());
             enemyProjectiles.forEach(projectile => projectile.draw());
             projectiles.forEach(projectile => projectile.draw());
+            
+            // Desenha explosões
+            explosions.forEach(explosion => explosion.draw());
+            
             player.draw();
             
             requestAnimationFrame(gameLoop);
